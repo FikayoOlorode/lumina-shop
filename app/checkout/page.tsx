@@ -12,15 +12,33 @@ export default function Checkout() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    const savedCart = localStorage.getItem('shop_cart')
-    if (savedCart) {
-      setCart(JSON.parse(savedCart))
-    }
-
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+      const loggedInUser = session?.user ?? null
+      setUser(loggedInUser)
+
+      if (loggedInUser) {
+        // CROSS-DEVICE SYNC: Fetch cart from Supabase if logged in
+        fetchCloudCart(loggedInUser.id)
+      } else {
+        // GUEST FALLBACK: Fetch from local storage
+        const savedCart = localStorage.getItem('shop_cart')
+        if (savedCart) setCart(JSON.parse(savedCart))
+      }
     })
   }, [])
+
+  async function fetchCloudCart(userId: string) {
+    const { data, error } = await supabase
+      .from('cart_items')
+      .select('*')
+      .eq('user_id', userId)
+      
+    if (data && data.length > 0) {
+      setCart(data)
+    } else if (error) {
+      console.error("Error fetching cloud cart:", error)
+    }
+  }
 
   const total = cart.reduce((sum, item) => sum + item.price, 0)
 
@@ -34,6 +52,7 @@ export default function Checkout() {
 
     setIsSubmitting(true)
 
+    // Save to orders table
     const { error } = await supabase.from('orders').insert([
       {
         user_email: user.email,
@@ -49,6 +68,7 @@ export default function Checkout() {
       return
     }
 
+    // Trigger Mailgun confirmation email
     await fetch('/api/email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -58,10 +78,12 @@ export default function Checkout() {
       })
     })
 
+    // Clear local storage and cloud database cart
+    localStorage.removeItem('shop_cart')
+    await supabase.from('cart_items').delete().eq('user_id', user.id)
+
     setIsSubmitting(false)
     alert("Order placed successfully! Check your email for a confirmation.")
-    
-    localStorage.removeItem('shop_cart')
     router.push('/')
   }
 
@@ -89,17 +111,17 @@ export default function Checkout() {
             {cart.map((item, index) => (
               <div key={index} className="py-4 flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                  <img src={item.image_url} alt={item.name} className="w-16 h-16 object-cover rounded-lg bg-slate-50 border border-slate-100" />
-                  <span className="font-medium text-slate-800">{item.name}</span>
+                  <img src={item.image_url} alt={item.title || item.name} className="w-16 h-16 object-cover rounded-lg bg-slate-50 border border-slate-100" />
+                  <span className="font-medium text-slate-800">{item.title || item.name}</span>
                 </div>
-                <span className="font-semibold text-slate-600">${item.price}</span>
+                <span className="font-semibold text-slate-600">₦{item.price}</span>
               </div>
             ))}
             {cart.length === 0 && <p className="text-slate-400 py-4">Your cart is empty.</p>}
             
             <div className="py-6 flex justify-between items-center mt-2 border-t-2 border-slate-100">
               <span className="text-lg font-bold text-slate-800">Total</span>
-              <span className="text-3xl font-extrabold text-indigo-600">${total.toFixed(2)}</span>
+              <span className="text-3xl font-extrabold text-indigo-600">₦{total.toFixed(2)}</span>
             </div>
           </div>
 
