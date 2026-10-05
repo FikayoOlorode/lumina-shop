@@ -42,21 +42,10 @@ export default function Home() {
     await supabase.auth.signOut()
   }
 
-const addToCart = async (product: Product) => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return alert("Please log in to add items to your cart");
+  function addToCart(product: Product) {
+    setCart([...cart, product])
+  }
 
-  // Push to Supabase so the mobile app's WebSocket picks it up instantly
-  const { error } = await supabase.from('cart_items').upsert({
-    user_id: user.id,
-    product_id: product.id,
-    title: product.name,
-    price: product.price,
-    quantity: 1
-  }, { onConflict: 'user_id,product_id' });
-
-  if (error) console.error("Error syncing cart:", error);
-};
   function goToCheckout() {
     if (cart.length === 0) {
       alert("Your cart is empty!")
